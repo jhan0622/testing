@@ -1,0 +1,325 @@
+/**
+ * Render a json tree in a svg format
+ * @param contentToDisplay html element where content will be to show
+ * @param json json to print
+ * @param width width from tree
+ * @param height height from tree
+ */
+function renderTreeChar(contentToDisplay, json, width = 960, height = 100) {
+
+    // Define Default graph config
+    let nodesBackgroundColor = '#2b2c3e';
+    let nodeTextFontColor = '#46c46e';
+    let nodeTrokeColor = '#475872'; // #475872
+    let nodeChildrenColor = '#faa81a';
+    // define the colors that will be the each lvl in tree
+    let levelColors = [
+        "#84b6f4",
+        "#ff6961",
+        "#77dd77",
+        "#fdfd96",
+        "#fdcae1",
+        "#84b6f4",
+        "#ff6961",
+        "#77dd77",
+        "#fdfd96",
+        "#fdcae1",
+    ];
+
+    // Validate contentTodisplay
+    if(!!document.querySelector(contentToDisplay) === false){
+        return `element ${contentToDisplay} does't exist`;
+    }
+
+    // Define space between each node
+    let nodeWidth = 180;
+
+    var margin = {
+            top: 20,
+            right: 120,
+            bottom: 20,
+            left: 120
+        };
+
+    // Define size of tree
+    width  = width - margin.right - margin.left;
+    height = height - margin.top - margin.bottom;
+
+    // Try to parse json data to d3 structure
+    try {
+        json = parseJsonToD3Format(json);
+    }catch (e) {
+        return console.error(`And error trying to parse json data to d3 format ${e}`);
+    }
+
+    // set bg to result content element
+    asignBgsContent(contentToDisplay);
+
+    var i = 0,
+        duration = 750,
+        rectW = 140,
+        rectH = 40;
+
+    var doubleClickTime = 0;
+    var threshold = 200;
+
+    var tree = d3.layout.tree().nodeSize([height, width]);
+
+    var diagonal = d3.svg.diagonal()
+    .projection(function(d) {
+        return [d.y, d.x];
+    });
+
+    // Calculate the height from windows
+    let windowHeight_ = getWindowHeight();
+    windowHeight_ = parseInt(windowHeight_ / 4.1);
+
+    var accountSvg = d3.select(contentToDisplay).append("svg")
+    .attr("width", 1000)
+    .attr("height", "calc(60vh)")
+    .attr("class", 'tree-json')
+    .call(zm = d3.behavior.zoom().scaleExtent([0.5, 3]).on("zoom", redraw)).on("dblclick.zoom", null)
+    .append("g")
+    .attr("transform", "translate(" + margin.left + "," + 220 + ")");
+
+
+    root = json;
+    root.x0 = height / 2;
+    root.y0 = 0;
+
+    update(root);
+
+    //necessary so that zoom knows where to zoom and unzoom from
+    zm.translate([250, 20]);
+
+    // d3.select("body").style("height", "455");
+
+    function update(source) {
+
+        // Compute the new tree layout.
+        var nodes = tree.nodes(root).reverse(),
+            links = tree.links(nodes);
+
+        // Normalize for fixed-depth.
+        nodes.forEach(function(d) {
+            d.y = d.depth * nodeWidth;
+        });
+
+        // Update the nodes…
+        var node = accountSvg.selectAll("g.node")
+        .data(nodes, function(d) {
+            return d.id || (d.id = ++i);
+        });
+
+        // Enter any new nodes at the parent's previous position.
+        var nodeEnter = node.enter().append("g")
+        .attr("class", "node")
+        .attr("transform", function(d) {
+            return "translate(" + source.y0 + "," + source.x0 + ")";
+        })
+        .on("click", click);
+
+        nodeEnter.append("rect")
+        .attr("width", rectW)
+        .attr("height", rectH)
+        .attr("stroke-width", 1)
+        .attr('rx', '2')
+        .attr('ry', '2')
+        .style("fill", nodesBackgroundColor);
+
+        nodeEnter.append("text")
+        .attr("x", rectW / 2)
+        .attr("y", rectH / 2)
+        .attr("dy", ".35em")
+        .attr("text-anchor", "middle")
+        .style('font-family', 'Catamaran, sans-serif')
+        .style('font-weight', 500)
+        .style('font-size', 12)
+        .text(function(d) {
+            return d.name;
+        });
+
+        nodeEnter.selectAll('rect')
+        .attr("width", function(d) {return this.parentNode.getBBox().width;})
+
+        // Transition nodes to their new position.
+        var nodeUpdate = node.transition()
+        .duration(duration)
+        .attr("transform", function(d) {
+            return "translate(" + d.y + "," + d.x + ")";
+        });
+
+        nodeUpdate.select("rect")
+        .attr("width", rectW)
+        .attr("height", rectH)
+        .attr("stroke-width", 1)
+        .style("stroke", function(d) {
+            return levelColors[d.depth];
+        });
+
+        nodeUpdate.select("text")
+        .style("fill-opacity", 1)
+        .style("fill", function(d) {
+            return levelColors[d.depth];
+        });
+
+        // Transition exiting nodes to the parent's new position.
+        var nodeExit = node.exit().transition()
+        .duration(duration)
+        .attr("transform", function(d) {
+            return "translate(" + source.y + "," + source.x + ")";
+        })
+        .remove();
+
+        nodeExit.select("rect")
+        .attr("width", rectW)
+        .attr("height", rectH)
+        .attr("stroke", nodeTrokeColor)
+        .attr("stroke-width", 1);
+
+        // Update the links…
+        var link = accountSvg.selectAll("path.link")
+        .data(links, function(d) {
+            return d.target.id;
+        });
+
+        // Enter any new links at the parent's previous position.
+        link.enter().insert("path", "g")
+        .attr("class", "link")
+        .style('stroke', nodeTrokeColor)
+        .attr("d", function(d) {
+            var o = {
+                x: source.x0,
+                y: source.y0
+            };
+            return diagonal({
+                source: o,
+                target: o
+            });
+        });
+
+        // Transition links to their new position.
+        link.transition()
+        .duration(duration)
+        .attr("d", function(d) {
+            var s = {
+                y: d.source.y + rectW,
+                x: d.source.x + rectH / 2
+            };
+            var t = {
+                x: d.target.x + rectH / 2,
+                y: d.target.y
+            };
+            return diagonal({
+                source: s,
+                target: t
+            })
+        });
+
+        // Transition exiting nodes to the parent's new position.
+        link.exit().transition()
+        .duration(duration)
+        .attr("d", function(d) {
+            var o = {
+                x: source.x,
+                y: source.y
+            };
+            return diagonal({
+                source: o,
+                target: o
+            });
+        })
+        .remove();
+
+        // Stash the old positions for transition.
+        nodes.forEach(function(d) {
+            d.x0 = d.x;
+            d.y0 = d.y;
+        });
+    }
+
+
+    /***
+     * Toggle children on click.
+     */
+    function click(d) {
+        var t0 = new Date();
+        if (t0 - doubleClickTime > threshold) {
+            setTimeout(function() {
+                if (t0 - doubleClickTime > threshold) {
+
+                    if (d.children) {
+                        d._children = d.children;
+                        d.children = null;
+                    } else {
+                        d.children = d._children;
+                        d._children = null;
+                    }
+                    update(d);
+
+                }
+            }, threshold);
+        }
+    }
+
+    /**
+     * Redraw for zoom
+     */
+    function redraw() {
+        //console.log("here", d3.event.translate, d3.event.scale);
+        accountSvg.attr("transform",
+            "translate(" + d3.event.translate + ")" + " scale(" + d3.event.scale + ")");
+    }
+
+    /**
+     * set the background styles from specific content to show the tree information
+     * @param tagElem
+     */
+    function asignBgsContent(tagElem) {
+        let elem = document.querySelector(tagElem);
+        elem.style.background = "radial-gradient(rgb(80, 80, 80) 0.5px, rgb(47, 49, 54) 0.5px) 0% 0% / 15px 15px rgb(47, 49, 54)";
+        elem.style.border = "10px solid #282c34";
+        elem.style["border-radius"] = "2%";
+    }
+}
+
+/**
+ *
+ * @param json
+ * @returns {{}}
+ */
+function parseJsonToD3Format(json) {
+    // Loop from json
+    let out = {};
+
+    // if elem is a string and return node name with value
+    if (typeof json === 'string') {
+        out.name = json;
+        return out;
+    }
+
+    // Iterate in json
+    Object.entries(json).forEach(([key, value]) => {
+        // Validate string type in value
+        if (typeof value === 'string') {
+            out.name = value;
+            // Validate the array value to deeper into it
+        } else if (Array.isArray(value) == true) {
+            out.name = key;
+            out.children = [];
+            // Iterate into array values and get the data
+            value.forEach((val) => {
+                out.children.push(
+                    parseJsonToD3Format(val)
+                );
+            });
+        }else if (typeof value === 'object') {
+            out.name = key;
+            out.children = [
+                {name: parseJsonToD3Format(value)}
+            ]
+        }
+    });
+
+    return out;
+}
